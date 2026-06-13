@@ -17,7 +17,7 @@ from html import escape
 from typing import Any
 from urllib.parse import urlparse
 
-from . import config
+from . import config, symbol_catalog
 from .llm_adapter import generate_llm_response, probe_endpoint
 from .llm_config import load_config_from_env
 from .llm_prompt_builder import build_llm_prompt
@@ -31,6 +31,17 @@ from .news_fetcher import fetch_symbol_news
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 3010
 MAX_BODY_BYTES = 64_000
+
+_SYMBOL_ALIASES: dict[str, str] = {
+    "HDFC": "HDFCBANK",
+    "HDFC BANK": "HDFCBANK",
+    "STATE BANK OF INDIA": "SBIN",
+    "SBI": "SBIN",
+    "AUROBINDO": "AUROPHARMA",
+    "AUROBINDO PHARMA": "AUROPHARMA",
+    "JSW": "JSWSTEEL",
+    "JSW STEEL": "JSWSTEEL",
+}
 
 
 @dataclass
@@ -46,12 +57,24 @@ class WebState:
 STATE = WebState()
 
 
+def _resolve_symbol(raw_symbol: str) -> str:
+    sym = raw_symbol.strip().upper()
+    alias_key = " ".join(sym.replace(".", " ").split())
+    if alias_key in _SYMBOL_ALIASES:
+        return _SYMBOL_ALIASES[alias_key]
+    cleaned = symbol_catalog.normalise_query(sym)
+    if cleaned and symbol_catalog.is_known(cleaned):
+        return cleaned
+    matches = symbol_catalog.find_matches(cleaned, limit=1)
+    return matches[0] if matches else cleaned
+
+
 def parse_symbols(raw: str | None) -> list[str]:
     if not raw:
         return []
     seen: dict[str, None] = {}
     for part in raw.replace(";", ",").split(","):
-        sym = part.strip().upper()
+        sym = _resolve_symbol(part)
         if sym and sym not in seen:
             seen[sym] = None
     return list(seen.keys())

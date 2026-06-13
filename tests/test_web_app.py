@@ -13,6 +13,15 @@ from src import web_app  # noqa: E402
 from src.news_models import NewsResult  # noqa: E402
 
 
+def test_parse_symbols_resolves_common_company_aliases():
+    assert web_app.parse_symbols("hdfc, sbi, aurobindo, jsw") == [
+        "HDFCBANK",
+        "SBIN",
+        "AUROPHARMA",
+        "JSWSTEEL",
+    ]
+
+
 def test_load_workspace_updates_state(monkeypatch):
     state = web_app.WebState()
 
