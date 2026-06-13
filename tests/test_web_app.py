@@ -55,19 +55,20 @@ def test_ask_question_autoloads_when_symbols_supplied(monkeypatch):
     )
     monkeypatch.setattr(web_app, "_workspace_text_for_symbols", lambda s, l: "SYMBOL: RELIANCE")
 
-    class FakeTalkRunner:
-        def __init__(self):
-            self.workspace = None
+    class FakeResponse:
+        ok = True
+        timestamp = "13:06:26 10:00:00"
+        response_text = "OK"
+        error = None
 
-        def set_workspace(self, **kwargs):
-            self.workspace = kwargs
+    def fake_prompt(**kwargs):
+        assert kwargs["user_question"] == "Say OK"
+        assert kwargs["symbols"] == ["RELIANCE"]
+        return object()
 
-        def ask_sync(self, question):
-            assert question == "Say OK"
-            assert self.workspace["symbols"] == ["RELIANCE"]
-            return "ok", "OK", "13:06:26 10:00:00"
-
-    monkeypatch.setattr(web_app, "TalkRunner", FakeTalkRunner)
+    monkeypatch.setattr(web_app, "build_llm_prompt", fake_prompt)
+    monkeypatch.setattr(web_app, "generate_llm_response", lambda *_a, **_kw: FakeResponse())
+    monkeypatch.setattr(web_app, "load_config_from_env", lambda: object())
 
     out = web_app.ask_question({"symbols": "RELIANCE", "question": "Say OK"}, state)
 

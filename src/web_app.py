@@ -13,15 +13,20 @@ import os
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from html import escape
 from typing import Any
 from urllib.parse import urlparse
 
 from . import config
+from .llm_adapter import generate_llm_response, probe_endpoint
 from .llm_config import load_config_from_env
-from .llm_adapter import probe_endpoint
+from .llm_prompt_builder import build_llm_prompt
 from .news_fetcher import DEFAULT_TIMEOUT_SECONDS
-from .talk_runner import TalkRunner
-from .workspace_window import _workspace_text_for_symbols, parse_symbols, run_pipeline
+from .news_models import NewsResult
+from .observation_builder import build_observations
+from .symbol_reader import load_symbol_data
+from .text_formatter import format_observations
+from .news_fetcher import fetch_symbol_news
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 3010
@@ -39,6 +44,81 @@ class WebState:
 
 
 STATE = WebState()
+
+
+def parse_symbols(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    seen: dict[str, None] = {}
+    for part in raw.replace(";", ",").split(","):
+        sym = part.strip().upper()
+        if sym and sym not in seen:
+            seen[sym] = None
+    return list(seen.keys())
+
+
+def _empty_observation(symbol: str, lookback: int) -> dict[str, Any]:
+    return {"symbol": symbol, "lookback_sessions": lookback, "cash": {}, "fo": {}}
+
+
+def _build_observations_for_symbol(symbol: str, lookback: int) -> dict[str, Any]:
+    try:
+        return build_observations(load_symbol_data(symbol, lookback_sessions=lookback))
+    except Exception:  # noqa: BLE001
+        return _empty_observation(symbol, lookback)
+
+
+def _workspace_text_for_symbols(symbols: list[str], lookback: int) -> str:
+    blocks: list[str] = []
+    for sym in symbols:
+        try:
+            obs = build_observations(load_symbol_data(sym, lookback_sessions=lookback))
+            blocks.append(format_observations(obs))
+        except Exception as exc:  # noqa: BLE001
+            blocks.append(f"SYMBOL: {sym}\n(observation unavailable: {type(exc).__name__})\n")
+    return "\n\n".join(blocks)
+
+
+def _observation_html(observations: list[dict[str, Any]]) -> str:
+    text = "\n\n".join(format_observations(obs) for obs in observations)
+    return f"<pre>{escape(text)}</pre>"
+
+
+def _news_html(results: list[NewsResult]) -> str:
+    parts: list[str] = []
+    for result in results:
+        parts.append(f"<h3>{escape(result.symbol)}</h3>")
+        if result.error:
+            parts.append(f"<p>ERROR: {escape(result.error)}</p>")
+        if not result.items:
+            parts.append("<p>Not Available</p>")
+            continue
+        parts.append("<ul>")
+        for item in result.items:
+            headline = escape(item.headline or "Not Available")
+            source = escape(item.source or "")
+            url = escape(item.url or "", quote=True)
+            if url:
+                parts.append(f'<li><a href="{url}" target="_blank" rel="noreferrer">{headline}</a> <small>{source}</small></li>')
+            else:
+                parts.append(f"<li>{headline} <small>{source}</small></li>")
+        parts.append("</ul>")
+    return "".join(parts) if parts else "<p>No news loaded.</p>"
+
+
+def run_pipeline(
+    symbols: list[str],
+    *,
+    lookback: int,
+    news_limit: int,
+    news_timeout: float,
+) -> tuple[str, str, list[NewsResult]]:
+    observations = [_build_observations_for_symbol(sym, lookback) for sym in symbols]
+    news_results = [
+        fetch_symbol_news(sym, limit=news_limit, timeout=news_timeout)
+        for sym in symbols
+    ]
+    return _observation_html(observations), _news_html(news_results), news_results
 
 
 def _jsonable_news(result: Any) -> dict[str, Any]:
@@ -121,18 +201,29 @@ def ask_question(payload: dict[str, Any], state: WebState = STATE) -> dict[str, 
         if not load_result.get("ok"):
             return load_result
 
-    runner = TalkRunner()
-    runner.set_workspace(
-        workspace_text=state.workspace_text,
-        workspace_html=state.observation_html,
-        news_items=state.news_results,
-        symbols=state.symbols,
-    )
-    kind, text, timestamp = runner.ask_sync(question)
+    try:
+        payload_obj = build_llm_prompt(
+            user_question=question,
+            workspace_html=state.observation_html,
+            workspace_text=state.workspace_text,
+            news_items=state.news_results,
+            symbols=state.symbols,
+        )
+        response = generate_llm_response(payload_obj, load_config_from_env())
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "kind": "error",
+            "timestamp": "",
+            "response_text": f"{type(exc).__name__}: {exc}",
+            "symbols": state.symbols,
+        }
+    kind = "ok" if response.ok else "error"
+    text = response.response_text if response.ok else (response.error or "Market response unavailable.")
     return {
-        "ok": kind == "ok",
+        "ok": response.ok,
         "kind": kind,
-        "timestamp": timestamp,
+        "timestamp": response.timestamp,
         "response_text": text,
         "symbols": state.symbols,
     }
