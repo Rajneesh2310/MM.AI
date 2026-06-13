@@ -13,6 +13,7 @@ from pathlib import Path
 
 DATA_ENV_VAR = "MM_DATA_ROOT"
 ENV_VAR = "MM_INSTALL_ROOT"
+VPS_DATA_ROOT = Path("/opt/mm-web-data")
 _DEV_DEFAULT = Path.home() / "MMMarket"
 _FROZEN_CONFIG_NAME = "mm_install.json"
 
@@ -56,6 +57,8 @@ def data_root() -> Path:
     env = os.environ.get(DATA_ENV_VAR, "").strip()
     if env:
         return Path(env).expanduser().resolve()
+    if os.name != "nt":
+        return VPS_DATA_ROOT
     return install_root() / "data"
 
 

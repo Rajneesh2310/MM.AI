@@ -29,3 +29,11 @@ def test_mm_install_root_remains_legacy_fallback(tmp_path, monkeypatch):
 
     assert config.install_root() == install.resolve()
     assert config.data_root() == install.resolve() / "data"
+
+
+def test_linux_default_matches_mmweb_vps_data_root(monkeypatch):
+    monkeypatch.delenv("MM_DATA_ROOT", raising=False)
+    monkeypatch.delenv("MM_INSTALL_ROOT", raising=False)
+    monkeypatch.setattr(config.os, "name", "posix")
+
+    assert config.data_root().as_posix() == "/opt/mm-web-data"

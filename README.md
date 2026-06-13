@@ -41,11 +41,19 @@ Resolution order (`src/config.py`):
 1. `MM_DATA_ROOT` environment variable, if set. This is the direct data folder, e.g. `/opt/mm-web-data`.
 2. `MM_INSTALL_ROOT` environment variable, if set. MM.AI reads `<MM_INSTALL_ROOT>/data`.
 3. `mm_install.json` (key `install_root` or `data_root`) beside the running executable - frozen builds only.
-4. `~/MMMarket/data` - developer default.
+4. `/opt/mm-web-data` on Linux/VPS.
+5. `~/MMMarket/data` on Windows/dev.
 
 No path is hard-coded. MM.AI never writes to any of these locations.
 
-For VPS deployments running MMWeb, set the same value MMWeb uses:
+For VPS deployments running MMWeb, no data-root env var is required if the data
+folder is at the standard path:
+
+```bash
+/opt/mm-web-data
+```
+
+You can still override it if needed:
 
 ```bash
 export MM_DATA_ROOT=/opt/mm-web-data
