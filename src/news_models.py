@@ -18,12 +18,14 @@ class NewsItem:
         source:    source/site name (may be ``None`` if the feed omits it)
         url:       canonical link to the article (not fetched, not stored)
         timestamp: MM.AI fetch/render time in ``DD:MM:YY HH:MM:SS``
+        published_at: source publish time from RSS ``pubDate`` when available
     """
 
     headline: str
     source: str | None
     url: str
     timestamp: str
+    published_at: str = ""
 
 
 @dataclass(frozen=True)

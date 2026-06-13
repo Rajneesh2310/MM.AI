@@ -24,6 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 from xml.etree import ElementTree as ET
 
 from .news_models import NewsItem, NewsResult
@@ -61,12 +62,32 @@ def _parse_items(body: bytes, limit: int, timestamp: str) -> list[NewsItem]:
             break
         title = (item_el.findtext("title") or "").strip()
         link = (item_el.findtext("link") or "").strip()
+        published_at = _normalise_pubdate(item_el.findtext("pubDate"))
         if not title or not link:
             continue
         source_el = item_el.find("source")
         source = source_el.text.strip() if source_el is not None and source_el.text else None
-        items.append(NewsItem(headline=title, source=source, url=link, timestamp=timestamp))
+        items.append(
+            NewsItem(
+                headline=title,
+                source=source,
+                url=link,
+                timestamp=timestamp,
+                published_at=published_at,
+            )
+        )
+    items.sort(key=lambda item: item.published_at or "", reverse=True)
     return items
+
+
+def _normalise_pubdate(raw: str | None) -> str:
+    if not raw:
+        return ""
+    try:
+        parsed = parsedate_to_datetime(raw.strip())
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return raw.strip()
+    return parsed.isoformat()
 
 
 def fetch_symbol_news(

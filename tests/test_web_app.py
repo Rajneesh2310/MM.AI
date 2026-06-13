@@ -51,6 +51,7 @@ def test_load_workspace_updates_state(monkeypatch):
     assert out["ok"] is True
     assert out["symbols"] == ["RELIANCE", "INFY"]
     assert out["observation_html"] == "<p>obs</p>"
+    assert "data_inventory_html" in out
     assert state.workspace_text == "workspace"
 
 
@@ -73,7 +74,10 @@ def test_ask_question_autoloads_when_symbols_supplied(monkeypatch):
     def fake_prompt(**kwargs):
         assert kwargs["user_question"] == "Say OK"
         assert kwargs["symbols"] == ["RELIANCE"]
-        return object()
+        class FakePrompt:
+            prompt_text = "PROMPT SENT"
+
+        return FakePrompt()
 
     monkeypatch.setattr(web_app, "build_llm_prompt", fake_prompt)
     monkeypatch.setattr(web_app, "generate_llm_response", lambda *_a, **_kw: FakeResponse())
@@ -87,4 +91,5 @@ def test_ask_question_autoloads_when_symbols_supplied(monkeypatch):
         "timestamp": "13:06:26 10:00:00",
         "response_text": "OK",
         "symbols": ["RELIANCE"],
+        "prompt_text": "PROMPT SENT",
     }

@@ -10,10 +10,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from html import escape
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -22,6 +23,7 @@ from .llm_adapter import generate_llm_response, probe_endpoint
 from .llm_config import load_config_from_env
 from .llm_prompt_builder import build_llm_prompt
 from .news_fetcher import DEFAULT_TIMEOUT_SECONDS
+from .models import SymbolData
 from .news_models import NewsResult
 from .observation_builder import build_observations
 from .symbol_reader import load_symbol_data
@@ -43,13 +45,25 @@ _SYMBOL_ALIASES: dict[str, str] = {
     "JSW STEEL": "JSWSTEEL",
 }
 
+_NEWS_QUERIES: dict[str, str] = {
+    "HDFCBANK": "HDFC Bank",
+    "SBIN": "State Bank of India SBI",
+    "AUROPHARMA": "Aurobindo Pharma",
+    "JSWSTEEL": "JSW Steel",
+    "BANKNIFTY": "Bank Nifty",
+    "NIFTY": "Nifty 50",
+}
+
 
 @dataclass
 class WebState:
     symbols: list[str] = field(default_factory=list)
     observation_html: str = ""
     news_html: str = ""
+    data_inventory_html: str = ""
+    data_inventory_text: str = ""
     workspace_text: str = ""
+    prompt_text: str = ""
     news_results: list[Any] = field(default_factory=list)
     status: str = "ready"
 
@@ -95,11 +109,62 @@ def _workspace_text_for_symbols(symbols: list[str], lookback: int) -> str:
     blocks: list[str] = []
     for sym in symbols:
         try:
-            obs = build_observations(load_symbol_data(sym, lookback_sessions=lookback))
+            symbol_data = load_symbol_data(sym, lookback_sessions=lookback)
+            obs = build_observations(symbol_data)
             blocks.append(format_observations(obs))
+            extra = _extra_market_context(symbol_data)
+            if extra:
+                blocks.append(extra)
         except Exception as exc:  # noqa: BLE001
             blocks.append(f"SYMBOL: {sym}\n(observation unavailable: {type(exc).__name__})\n")
     return "\n\n".join(blocks)
+
+
+def _sorted_unique_text(values: list[Any]) -> list[str]:
+    seen: dict[str, None] = {}
+    for value in values:
+        text = str(value).strip()
+        if text and text not in seen:
+            seen[text] = None
+    return sorted(seen)
+
+
+def _expiry_values(rows: list[dict[str, Any]]) -> list[str]:
+    expiry_cols = (
+        "EXPIRY_DT",
+        "EXPIRY_DATE",
+        "EXPIRY",
+        "EXPIRYDATE",
+        "CONTRACT_EXPIRY",
+    )
+    values: list[Any] = []
+    for row in rows:
+        for col in expiry_cols:
+            if col in row and row.get(col) not in (None, ""):
+                values.append(row.get(col))
+                break
+    return _sorted_unique_text(values)
+
+
+def _row_columns(rows: list[dict[str, Any]]) -> list[str]:
+    cols: dict[str, None] = {}
+    for row in rows[:10]:
+        for key in row:
+            cols[str(key)] = None
+    return sorted(cols)
+
+
+def _extra_market_context(symbol_data: SymbolData) -> str:
+    cash_rows = [symbol_data.cash.latest_row] if symbol_data.cash.latest_row else []
+    fo_rows = list(symbol_data.fo.latest_session_rows)
+    lines: list[str] = [
+        f"SYMBOL: {symbol_data.symbol}",
+        "RAW DATA AVAILABILITY",
+        f"Cash columns: {', '.join(_row_columns(cash_rows)) or 'Not Available'}",
+        f"F&O columns: {', '.join(_row_columns(fo_rows)) or 'Not Available'}",
+        f"Latest F&O expiry dates: {', '.join(_expiry_values(fo_rows)) or 'Not Available'}",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def _observation_html(observations: list[dict[str, Any]]) -> str:
@@ -121,12 +186,69 @@ def _news_html(results: list[NewsResult]) -> str:
             headline = escape(item.headline or "Not Available")
             source = escape(item.source or "")
             url = escape(item.url or "", quote=True)
+            published_at = escape(getattr(item, "published_at", "") or "publish date unavailable")
             if url:
-                parts.append(f'<li><a href="{url}" target="_blank" rel="noreferrer">{headline}</a> <small>{source}</small></li>')
+                parts.append(f'<li><time>{published_at}</time> <a href="{url}" target="_blank" rel="noreferrer">{headline}</a> <small>{source}</small></li>')
             else:
-                parts.append(f"<li>{headline} <small>{source}</small></li>")
+                parts.append(f"<li><time>{published_at}</time> {headline} <small>{source}</small></li>")
         parts.append("</ul>")
     return "".join(parts) if parts else "<p>No news loaded.</p>"
+
+
+def _news_query_for_symbol(symbol: str) -> str:
+    return _NEWS_QUERIES.get(symbol.strip().upper(), symbol)
+
+
+def _fetch_news_for_symbol(symbol: str, *, limit: int, timeout: float) -> NewsResult:
+    result = fetch_symbol_news(_news_query_for_symbol(symbol), limit=limit, timeout=timeout)
+    return replace(result, symbol=symbol)
+
+
+def _parquet_files(root: Path, symbol: str) -> list[Path]:
+    sym_dir = root / f"SYMBOL={symbol}"
+    if not sym_dir.is_dir():
+        return []
+    try:
+        return sorted(sym_dir.glob("YEAR=*.parquet"))
+    except OSError:
+        return []
+
+
+def _data_inventory(symbols: list[str]) -> tuple[str, str]:
+    lines: list[str] = [
+        f"DATA ROOT: {config.data_root()}",
+        f"CASH ROOT: {config.cash_root()}",
+        f"F&O ROOT: {config.fo_root()}",
+        "",
+    ]
+    html_parts: list[str] = [
+        f"<p><strong>Data root:</strong> {escape(str(config.data_root()))}</p>",
+        "<table><thead><tr><th>Symbol</th><th>Segment</th><th>Parquet files available</th></tr></thead><tbody>",
+    ]
+    for sym in symbols:
+        for segment, root in (("cash", config.cash_root()), ("fo", config.fo_root())):
+            files = _parquet_files(root, sym)
+            lines.append(f"{sym} / {segment}:")
+            if files:
+                file_lines = []
+                for fp in files:
+                    try:
+                        stat = fp.stat()
+                        detail = f"{fp.name} ({stat.st_size:,} bytes)"
+                    except OSError:
+                        detail = fp.name
+                    lines.append(f"  - {fp}")
+                    file_lines.append(escape(detail))
+                html_files = "<br>".join(file_lines)
+            else:
+                lines.append("  - Not Available")
+                html_files = "<em>Not Available</em>"
+            html_parts.append(
+                f"<tr><td>{escape(sym)}</td><td>{escape(segment)}</td><td>{html_files}</td></tr>"
+            )
+        lines.append("")
+    html_parts.append("</tbody></table>")
+    return "".join(html_parts), "\n".join(lines).rstrip()
 
 
 def run_pipeline(
@@ -138,7 +260,7 @@ def run_pipeline(
 ) -> tuple[str, str, list[NewsResult]]:
     observations = [_build_observations_for_symbol(sym, lookback) for sym in symbols]
     news_results = [
-        fetch_symbol_news(sym, limit=news_limit, timeout=news_timeout)
+        _fetch_news_for_symbol(sym, limit=news_limit, timeout=news_timeout)
         for sym in symbols
     ]
     return _observation_html(observations), _news_html(news_results), news_results
@@ -155,6 +277,8 @@ def _jsonable_news(result: Any) -> dict[str, Any]:
                 "source": getattr(item, "source", ""),
                 "headline": getattr(item, "headline", ""),
                 "url": getattr(item, "url", ""),
+                "timestamp": getattr(item, "timestamp", ""),
+                "published_at": getattr(item, "published_at", ""),
             }
             for item in getattr(result, "items", [])
         ],
@@ -194,12 +318,16 @@ def load_workspace(payload: dict[str, Any], state: WebState = STATE) -> dict[str
         news_timeout=DEFAULT_TIMEOUT_SECONDS,
     )
     workspace_text = _workspace_text_for_symbols(symbols, lookback)
+    data_inventory_html, data_inventory_text = _data_inventory(symbols)
     status = f"loaded {len(symbols)} symbol(s) - news: {sum(r.count for r in news_results)}"
 
     state.symbols = symbols
     state.observation_html = obs_html
     state.news_html = news_html
+    state.data_inventory_html = data_inventory_html
+    state.data_inventory_text = data_inventory_text
     state.workspace_text = workspace_text
+    state.prompt_text = ""
     state.news_results = list(news_results)
     state.status = status
 
@@ -209,6 +337,8 @@ def load_workspace(payload: dict[str, Any], state: WebState = STATE) -> dict[str
         "status": status,
         "observation_html": obs_html,
         "news_html": news_html,
+        "data_inventory_html": data_inventory_html,
+        "data_inventory_text": data_inventory_text,
         "workspace_text": workspace_text,
         "news_results": [_jsonable_news(r) for r in news_results],
     }
@@ -232,6 +362,7 @@ def ask_question(payload: dict[str, Any], state: WebState = STATE) -> dict[str, 
             news_items=state.news_results,
             symbols=state.symbols,
         )
+        state.prompt_text = payload_obj.prompt_text
         response = generate_llm_response(payload_obj, load_config_from_env())
     except Exception as exc:  # noqa: BLE001
         return {
@@ -240,6 +371,7 @@ def ask_question(payload: dict[str, Any], state: WebState = STATE) -> dict[str, 
             "timestamp": "",
             "response_text": f"{type(exc).__name__}: {exc}",
             "symbols": state.symbols,
+            "prompt_text": state.prompt_text,
         }
     kind = "ok" if response.ok else "error"
     text = response.response_text if response.ok else (response.error or "Market response unavailable.")
@@ -249,6 +381,7 @@ def ask_question(payload: dict[str, Any], state: WebState = STATE) -> dict[str, 
         "timestamp": response.timestamp,
         "response_text": text,
         "symbols": state.symbols,
+        "prompt_text": state.prompt_text,
     }
 
 
@@ -264,9 +397,12 @@ INDEX_HTML = """<!doctype html>
     body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,Segoe UI,Arial,sans-serif; }
     header { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--line); background:#0b1017; }
     h1 { margin:0; font-size:18px; letter-spacing:0; }
-    main { display:grid; grid-template-columns:minmax(320px, 420px) 1fr; gap:14px; padding:14px; min-height:calc(100vh - 55px); }
+    main { display:grid; grid-template-columns:minmax(300px, 360px) minmax(420px, 1fr) minmax(420px, 1fr); gap:14px; padding:14px; min-height:calc(100vh - 55px); }
     section, aside { background:var(--panel); border:1px solid var(--line); border-radius:8px; }
     aside { padding:14px; display:flex; flex-direction:column; gap:12px; }
+    section { overflow:hidden; }
+    .section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border-bottom:1px solid var(--line); background:#0d131b; }
+    .section-head h2 { margin:0; font-size:14px; }
     label { color:var(--muted); font-size:12px; display:block; margin-bottom:5px; }
     input, textarea, button { width:100%; border:1px solid var(--line); border-radius:6px; background:#080d13; color:var(--text); padding:10px; font:inherit; }
     textarea { min-height:105px; resize:vertical; }
@@ -274,16 +410,22 @@ INDEX_HTML = """<!doctype html>
     button:disabled { opacity:.55; cursor:wait; }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
     .status { color:var(--muted); min-height:20px; }
-    .tabs { display:flex; border-bottom:1px solid var(--line); }
-    .tab { width:auto; border:0; border-right:1px solid var(--line); border-radius:0; background:#0d131b; padding:10px 14px; }
-    .tab.active { background:#182230; color:var(--accent); }
-    .pane { display:none; padding:14px; overflow:auto; height:calc(100vh - 110px); }
-    .pane.active { display:block; }
+    .panel-body { padding:14px; overflow:auto; height:calc(100vh - 118px); }
+    .split { display:grid; gap:14px; }
+    .block { border:1px solid var(--line); border-radius:6px; overflow:hidden; background:#080d13; }
+    .block h3 { margin:0; padding:8px 10px; border-bottom:1px solid var(--line); background:#0b1017; font-size:13px; }
+    .block-content { padding:10px; max-height:36vh; overflow:auto; }
     pre { white-space:pre-wrap; word-break:break-word; margin:0; color:var(--text); }
+    table { width:100%; border-collapse:collapse; font-size:12px; }
+    th, td { border-bottom:1px solid var(--line); padding:7px; text-align:left; vertical-align:top; }
+    th { color:var(--muted); background:#0b1017; position:sticky; top:0; }
+    time { display:inline-block; min-width:155px; color:var(--warn); font-size:12px; }
+    li { margin:7px 0; }
     iframe { width:100%; height:100%; border:0; background:white; border-radius:6px; }
     .answer { padding:12px; border:1px solid var(--line); border-radius:6px; background:#080d13; white-space:pre-wrap; min-height:120px; }
+    .prompt { padding:12px; border:1px solid var(--line); border-radius:6px; background:#080d13; white-space:pre-wrap; min-height:260px; overflow:auto; font-family:ui-monospace,Consolas,monospace; font-size:12px; }
     .health { font-family:ui-monospace,Consolas,monospace; font-size:12px; color:var(--muted); white-space:pre-wrap; }
-    @media (max-width: 900px) { main { grid-template-columns:1fr; } .pane { height:55vh; } }
+    @media (max-width: 1200px) { main { grid-template-columns:1fr; } .panel-body { height:auto; max-height:70vh; } }
   </style>
 </head>
 <body>
@@ -299,18 +441,22 @@ INDEX_HTML = """<!doctype html>
       <div><label>Question</label><textarea id="question" placeholder="What changed in RELIANCE today?"></textarea></div>
       <button id="askBtn">Ask MM.AI</button>
       <div id="status" class="status"></div>
-      <div id="answer" class="answer"></div>
       <div id="health" class="health"></div>
     </aside>
     <section>
-      <div class="tabs">
-        <button class="tab active" data-tab="obs">Observations</button>
-        <button class="tab" data-tab="news">News</button>
-        <button class="tab" data-tab="text">Workspace Text</button>
+      <div class="section-head"><h2>Data Available To Script</h2><span id="symbolStatus" class="status"></span></div>
+      <div class="panel-body split">
+        <div class="block"><h3>Parquet Files</h3><div id="inventory" class="block-content"><pre>No data loaded.</pre></div></div>
+        <div class="block"><h3>Observable Market Data</h3><div id="obs" class="block-content"><pre>No workspace loaded.</pre></div></div>
       </div>
-      <div id="obs" class="pane active"><pre>No workspace loaded.</pre></div>
-      <div id="news" class="pane"><pre>No news loaded.</pre></div>
-      <div id="text" class="pane"><pre>No text loaded.</pre></div>
+    </section>
+    <section>
+      <div class="section-head"><h2>LLM Prompt And Output</h2><span id="llmStatus" class="status"></span></div>
+      <div class="panel-body split">
+        <div class="block"><h3>News Ticker - Latest Published First</h3><div id="news" class="block-content"><pre>No news loaded.</pre></div></div>
+        <div class="block"><h3>Prompt Sent To LLM</h3><pre id="prompt" class="prompt">No prompt sent yet.</pre></div>
+        <div class="block"><h3>LLM Output</h3><div id="answer" class="answer"></div></div>
+      </div>
     </section>
   </main>
   <script>
@@ -326,10 +472,11 @@ INDEX_HTML = """<!doctype html>
     }
     function busy(on) { $("loadBtn").disabled = on; $("askBtn").disabled = on; }
     function showWorkspace(data) {
+      $("inventory").innerHTML = data.data_inventory_html || "<pre>No data inventory.</pre>";
       $("obs").innerHTML = data.observation_html || "<pre>No observations.</pre>";
       $("news").innerHTML = data.news_html || "<pre>No news.</pre>";
       state.workspaceText = data.workspace_text || "";
-      $("text").innerHTML = `<pre>${state.workspaceText.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</pre>`;
+      $("symbolStatus").textContent = (data.symbols || []).join(", ");
     }
     async function loadWorkspace({ silent = false } = {}) {
       busy(true); if (!silent) $("status").textContent = "Loading workspace...";
@@ -348,14 +495,12 @@ INDEX_HTML = """<!doctype html>
       try {
         const data = await post("/api/ask", { ...payload(), question: $("question").value });
         $("answer").textContent = data.response_text || data.error || "";
+        $("prompt").textContent = data.prompt_text || "No prompt returned.";
         $("status").textContent = `${data.kind || "response"} ${data.timestamp || ""}`;
+        $("llmStatus").textContent = data.timestamp || "";
       } catch (e) { $("status").textContent = e.message; }
       finally { busy(false); }
     };
-    document.querySelectorAll(".tab").forEach(btn => btn.onclick = () => {
-      document.querySelectorAll(".tab,.pane").forEach(el => el.classList.remove("active"));
-      btn.classList.add("active"); $(btn.dataset.tab).classList.add("active");
-    });
     fetch("/api/health").then(r => r.json()).then(data => {
       $("topStatus").textContent = `data: ${data.data_root}`;
       $("health").textContent = `LLM: ${data.llm.config.model_name} | alive: ${data.llm.probe.alive}`;

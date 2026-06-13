@@ -35,9 +35,16 @@ def _rss(items_xml: str) -> bytes:
     ).encode("utf-8")
 
 
-def _item(title: str, link: str, source: str | None = None, source_url: str = "https://example.invalid") -> str:
+def _item(
+    title: str,
+    link: str,
+    source: str | None = None,
+    source_url: str = "https://example.invalid",
+    pub_date: str | None = None,
+) -> str:
     src = f'<source url="{source_url}">{source}</source>' if source else ""
-    return f"<item><title>{title}</title><link>{link}</link>{src}</item>"
+    pub = f"<pubDate>{pub_date}</pubDate>" if pub_date else ""
+    return f"<item><title>{title}</title><link>{link}</link>{src}{pub}</item>"
 
 
 class _FakeResponse:
@@ -99,6 +106,29 @@ def test_respects_limit():
         result = fetch_symbol_news("INFY", limit=3)
     assert result.count == 3
     assert len(result.items) == 3
+
+
+def test_sorts_items_by_published_date_latest_first():
+    xml = "".join(
+        [
+            _item(
+                "Older",
+                "https://news.example/older",
+                "Wire",
+                pub_date="Fri, 12 Jun 2026 09:00:00 GMT",
+            ),
+            _item(
+                "Latest",
+                "https://news.example/latest",
+                "Wire",
+                pub_date="Sat, 13 Jun 2026 10:00:00 GMT",
+            ),
+        ]
+    )
+    with _patch_urlopen(_rss(xml)):
+        result = fetch_symbol_news("RELIANCE", limit=5)
+    assert [item.headline for item in result.items] == ["Latest", "Older"]
+    assert result.items[0].published_at.startswith("2026-06-13T10:00:00")
 
 
 def test_no_items_returns_no_headlines_error():

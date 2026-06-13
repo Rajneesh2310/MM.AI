@@ -192,7 +192,7 @@ def _normalise_news(items: Iterable[Any] | None) -> list[dict[str, str]]:
                         "source": _cap(ni.source, MAX_NEWS_SOURCE_CHARS),
                         "headline": _cap(ni.headline, MAX_NEWS_HEADLINE_CHARS),
                         "url": _cap(ni.url, MAX_NEWS_URL_CHARS),
-                        "timestamp": _cap(ni.timestamp, 32),
+                        "timestamp": _cap(getattr(ni, "published_at", "") or ni.timestamp, 64),
                     }
                 )
         elif isinstance(entry, NewsItem):
@@ -201,7 +201,7 @@ def _normalise_news(items: Iterable[Any] | None) -> list[dict[str, str]]:
                     "source": _cap(entry.source, MAX_NEWS_SOURCE_CHARS),
                     "headline": _cap(entry.headline, MAX_NEWS_HEADLINE_CHARS),
                     "url": _cap(entry.url, MAX_NEWS_URL_CHARS),
-                    "timestamp": _cap(entry.timestamp, 32),
+                    "timestamp": _cap(getattr(entry, "published_at", "") or entry.timestamp, 64),
                 }
             )
         elif isinstance(entry, dict):
@@ -210,7 +210,7 @@ def _normalise_news(items: Iterable[Any] | None) -> list[dict[str, str]]:
                     "source": _cap(entry.get("source"), MAX_NEWS_SOURCE_CHARS),
                     "headline": _cap(entry.get("headline"), MAX_NEWS_HEADLINE_CHARS),
                     "url": _cap(entry.get("url"), MAX_NEWS_URL_CHARS),
-                    "timestamp": _cap(entry.get("timestamp"), 32),
+                    "timestamp": _cap(entry.get("published_at") or entry.get("timestamp"), 64),
                 }
             )
         # silently skip unknown shapes
@@ -266,7 +266,7 @@ def _render_news(news_items: list[dict[str, str]]) -> str:
     rendered: list[str] = [f"Total headline references: {len(news_items)}", ""]
     for idx, item in enumerate(news_items, 1):
         rendered.append(
-            f"[{idx}] timestamp: {item['timestamp']}\n"
+            f"[{idx}] published_at: {item['timestamp']}\n"
             f"    source:    {item['source']}\n"
             f"    headline:  {item['headline']}\n"
             f"    url:       {item['url']}"
