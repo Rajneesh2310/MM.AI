@@ -79,6 +79,31 @@ $env:MM_INSTALL_ROOT = "C:\Users\<you>\MMMarket"   # Windows / PowerShell
 python -c "from src.symbol_reader import load_symbol_data; print(load_symbol_data('RELIANCE', 5))"
 ```
 
+## Web UI on VPS
+
+MM.AI includes a small browser UI/API for headless VPS use. It runs separately
+from MMWeb and reads the same default VPS data folder, `/opt/mm-web-data`.
+
+```bash
+cd /opt/mm-ai
+. .venv/bin/activate
+python -m src.web_app --host 0.0.0.0 --port 3010
+```
+
+With PM2:
+
+```bash
+cd /opt/mm-ai
+MM_AI_WEB_PORT=3010 pm2 start .venv/bin/python --name mm-ai -- -m src.web_app --host 0.0.0.0 --port 3010
+pm2 save
+```
+
+Open:
+
+```text
+http://<vps-ip>:3010
+```
+
 ## Running the tests
 
 ```powershell
