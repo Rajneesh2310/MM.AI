@@ -293,6 +293,7 @@ INDEX_HTML = """<!doctype html>
   <script>
     const $ = (id) => document.getElementById(id);
     const state = { workspaceText: "" };
+    let lastLoad = null;
     function payload() {
       return { symbols: $("symbols").value, lookback: Number($("lookback").value || 5), news_limit: Number($("newsLimit").value || 5) };
     }
@@ -307,15 +308,18 @@ INDEX_HTML = """<!doctype html>
       state.workspaceText = data.workspace_text || "";
       $("text").innerHTML = `<pre>${state.workspaceText.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</pre>`;
     }
-    $("loadBtn").onclick = async () => {
-      busy(true); $("status").textContent = "Loading workspace...";
+    async function loadWorkspace({ silent = false } = {}) {
+      busy(true); if (!silent) $("status").textContent = "Loading workspace...";
       try {
-        const data = await post("/api/load", payload());
+        const body = payload();
+        const data = await post("/api/load", body);
         if (!data.ok) throw new Error(data.error || "load failed");
-        showWorkspace(data); $("status").textContent = data.status;
+        lastLoad = body;
+        showWorkspace(data); $("status").textContent = `${data.status} | refreshed ${new Date().toLocaleTimeString()}`;
       } catch (e) { $("status").textContent = e.message; }
       finally { busy(false); }
-    };
+    }
+    $("loadBtn").onclick = () => loadWorkspace();
     $("askBtn").onclick = async () => {
       busy(true); $("status").textContent = "Generating...";
       try {
@@ -333,6 +337,9 @@ INDEX_HTML = """<!doctype html>
       $("topStatus").textContent = `data: ${data.data_root}`;
       $("health").textContent = `LLM: ${data.llm.config.model_name} | alive: ${data.llm.probe.alive}`;
     }).catch(() => { $("topStatus").textContent = "health unavailable"; });
+    setInterval(() => {
+      if (lastLoad) loadWorkspace({ silent: true });
+    }, 60000);
   </script>
 </body>
 </html>

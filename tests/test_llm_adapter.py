@@ -149,6 +149,26 @@ def test_defaults_when_no_env(monkeypatch):
     assert cfg.timeout_seconds == 120.0
 
 
+def test_openrouter_api_key_selects_openrouter_backend_by_default(monkeypatch):
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    cfg = load_config_from_env()
+    assert cfg.backend_type == "openrouter"
+    assert cfg.endpoint_url == "https://openrouter.ai/api/v1/chat/completions"
+    assert cfg.model_name == "openai/gpt-4o-mini"
+    assert cfg.api_key == "test-key"
+
+
+def test_openrouter_model_env_is_used(monkeypatch):
+    _clear_env(monkeypatch)
+    monkeypatch.setenv(ENV_BACKEND, "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+    cfg = load_config_from_env()
+    assert cfg.backend_type == "openrouter"
+    assert cfg.model_name == "anthropic/claude-3.5-sonnet"
+
+
 def test_env_overrides(monkeypatch):
     _clear_env(monkeypatch)
     monkeypatch.setenv(ENV_BACKEND, "openai_compatible")
@@ -253,6 +273,36 @@ def test_openai_compat_request_shape_and_choice_extraction():
     assert captured["url"] == cfg.endpoint_url
     assert captured["body"] == {
         "model": cfg.model_name,
+        "messages": [{"role": "user", "content": payload.prompt_text}],
+        "stream": False,
+    }
+
+
+def test_openrouter_request_shape_with_injected_transport():
+    payload = _sample_payload()
+    cfg = LLMConfig(
+        "openrouter",
+        "openai/gpt-4o-mini",
+        "https://openrouter.ai/api/v1/chat/completions",
+        30.0,
+        "test-key",
+    )
+    captured: dict = {}
+
+    def fake_transport(url, body, timeout):
+        captured["url"] = url
+        captured["body"] = body
+        captured["timeout"] = timeout
+        return {"choices": [{"message": {"content": "openrouter answer"}}]}
+
+    resp = generate_llm_response(payload, cfg, transport=fake_transport)
+
+    assert resp.ok
+    assert resp.backend == "openrouter"
+    assert resp.response_text == "openrouter answer"
+    assert captured["url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert captured["body"] == {
+        "model": "openai/gpt-4o-mini",
         "messages": [{"role": "user", "content": payload.prompt_text}],
         "stream": False,
     }

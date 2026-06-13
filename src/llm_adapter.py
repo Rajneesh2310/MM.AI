@@ -47,6 +47,7 @@ Transport = Callable[[str, dict, float], Any]
 
 _LOCAL_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "0.0.0.0", "::1"})
 _ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
+_OPENROUTER_HOSTS: frozenset[str] = frozenset({"openrouter.ai", "www.openrouter.ai"})
 
 # Canonical Ollama generate path. The /api/generate handler accepts the
 # {"model", "prompt", "stream"} body shape we emit. Anything else (root,
@@ -148,6 +149,27 @@ def _http_post(url: str, body: dict, timeout: float) -> Any:
     return json.loads(text)
 
 
+def _http_post_with_headers(
+    url: str, body: dict, timeout: float, headers: dict[str, str]
+) -> Any:
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "MM.AI-LLM-Adapter/1.0",
+            **headers,
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        raw = resp.read()
+    text = raw.decode("utf-8", errors="replace")
+    return json.loads(text)
+
+
 # ---------------------------------------------------------------------------
 # Backend dispatch
 # ---------------------------------------------------------------------------
@@ -197,6 +219,52 @@ def _call_openai_compat(
     if not isinstance(content, str):
         raise ValueError("missing_content")
     return content
+
+
+def _call_openrouter(prompt_text: str, config: LLMConfig) -> str:
+    if not config.api_key:
+        raise ValueError("missing_openrouter_api_key")
+    body = {
+        "model": config.model_name,
+        "messages": [{"role": "user", "content": prompt_text}],
+        "stream": False,
+    }
+    raw = _http_post_with_headers(
+        config.endpoint_url,
+        body,
+        config.timeout_seconds,
+        {"Authorization": f"Bearer {config.api_key}"},
+    )
+    if not isinstance(raw, dict):
+        raise ValueError(f"unexpected_response_type: {type(raw).__name__}")
+    choices = raw.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ValueError("missing_choices")
+    first = choices[0]
+    if not isinstance(first, dict):
+        raise ValueError("choice_not_a_dict")
+    msg = first.get("message")
+    if not isinstance(msg, dict):
+        raise ValueError("missing_message")
+    content = msg.get("content")
+    if not isinstance(content, str):
+        raise ValueError("missing_content")
+    return content
+
+
+def _is_openrouter_endpoint(url: str) -> tuple[bool, str]:
+    try:
+        parsed = urlparse(url)
+    except (ValueError, TypeError) as exc:
+        return False, f"invalid_url: {exc}"
+    if parsed.scheme != "https":
+        return False, "openrouter_requires_https"
+    host = (parsed.hostname or "").lower()
+    if host not in _OPENROUTER_HOSTS:
+        return False, f"openrouter_host_not_allowed: {host or 'missing'}"
+    if (parsed.path or "").rstrip("/") != "/api/v1/chat/completions":
+        return False, "openrouter_path_not_allowed"
+    return True, ""
 
 
 def _read_http_error_body(exc: urllib.error.HTTPError) -> str:
@@ -313,7 +381,10 @@ def generate_llm_response(
             0,
         )
 
-    ok, reason = _is_local_endpoint(config.endpoint_url)
+    if config.backend_type == "openrouter":
+        ok, reason = _is_openrouter_endpoint(config.endpoint_url)
+    else:
+        ok, reason = _is_local_endpoint(config.endpoint_url)
     if not ok:
         return _build_error(
             config,
@@ -328,10 +399,15 @@ def generate_llm_response(
     try:
         if config.backend_type == "ollama":
             response_text = _call_ollama(prompt_text, config, active_transport)
-        else:  # openai_compatible
+        elif config.backend_type == "openai_compatible":
             response_text = _call_openai_compat(
                 prompt_text, config, active_transport
             )
+        else:  # openrouter
+            if transport is not None:
+                response_text = _call_openai_compat(prompt_text, config, active_transport)
+            else:
+                response_text = _call_openrouter(prompt_text, config)
     except urllib.error.HTTPError as exc:
         elapsed = int((time.perf_counter() - started) * 1000)
         return _build_error(
@@ -402,6 +478,19 @@ def probe_endpoint(config: LLMConfig, timeout: float = 2.0) -> dict[str, Any]:
     (str | None).
     """
     started = time.perf_counter()
+    if config.backend_type == "openrouter":
+        ok, reason = _is_openrouter_endpoint(config.endpoint_url)
+        if not ok:
+            return {
+                "alive": False,
+                "latency_ms": 0,
+                "error": f"endpoint_rejected: {reason}",
+            }
+        return {
+            "alive": bool(config.api_key),
+            "latency_ms": 0,
+            "error": None if config.api_key else "missing_openrouter_api_key",
+        }
     ok, reason = _is_local_endpoint(config.endpoint_url)
     if not ok:
         return {

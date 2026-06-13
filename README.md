@@ -104,6 +104,31 @@ Open:
 http://<vps-ip>:3010
 ```
 
+News refreshes automatically every 60 seconds after a workspace is loaded.
+
+## LLM Backend
+
+MM.AI uses local Ollama by default. If `OPENROUTER_API_KEY` is present in the
+environment, MM.AI automatically uses OpenRouter instead:
+
+```bash
+export OPENROUTER_API_KEY="your-openrouter-key"
+export OPENROUTER_MODEL="openai/gpt-4o-mini"
+```
+
+For PM2:
+
+```bash
+cd /opt/mm-ai
+pm2 delete mm-ai 2>/dev/null || true
+OPENROUTER_API_KEY="$OPENROUTER_API_KEY" OPENROUTER_MODEL="openai/gpt-4o-mini" \
+  MM_AI_WEB_PORT=3010 pm2 start .venv/bin/python --name mm-ai --cwd /opt/mm-ai -- \
+  -m src.web_app --host 0.0.0.0 --port 3010
+pm2 save
+```
+
+Set `MM_AI_LLM_BACKEND=ollama` if you explicitly want to force local Ollama.
+
 ## Running the tests
 
 ```powershell
