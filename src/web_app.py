@@ -14,7 +14,6 @@ from dataclasses import dataclass, field, replace
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from html import escape
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -167,31 +166,101 @@ def _extra_market_context(symbol_data: SymbolData) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _format_card_value(value: Any) -> str:
+    if value is None or value == "":
+        return "Not Available"
+    if isinstance(value, float):
+        return f"{value:,.2f}"
+    return str(value)
+
+
+def _metric(label: str, value: Any, *, tone: str = "") -> str:
+    css = f" metric-{tone}" if tone else ""
+    return (
+        f'<div class="metric{css}">'
+        f"<span>{escape(label)}</span>"
+        f"<strong>{escape(_format_card_value(value))}</strong>"
+        "</div>"
+    )
+
+
+def _delta_tone(value: Any) -> str:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if numeric > 0:
+        return "up"
+    if numeric < 0:
+        return "down"
+    return ""
+
+
+def _has_segment_data(segment: dict[str, Any]) -> bool:
+    return bool(segment.get("latest_session") or segment.get("latest_fo_row_count"))
+
+
+def _market_cards_html(observations: list[dict[str, Any]]) -> str:
+    if not observations:
+        return '<div class="empty">No market data loaded.</div>'
+    cards: list[str] = []
+    for obs in observations:
+        symbol = escape(str(obs.get("symbol") or "UNKNOWN"))
+        cash = obs.get("cash") or {}
+        fo = obs.get("fo") or {}
+        cards.append(f'<article class="symbol-card"><header><h3>{symbol}</h3></header>')
+        if _has_segment_data(cash):
+            cards.append('<section class="segment-card"><h4>CASH</h4><div class="metric-grid">')
+            cards.append(_metric("Latest session", cash.get("latest_session")))
+            cards.append(_metric("Previous session", cash.get("previous_session")))
+            cards.append(_metric("Close", cash.get("latest_close")))
+            cards.append(_metric("Close change", cash.get("close_delta"), tone=_delta_tone(cash.get("close_delta"))))
+            cards.append(_metric("Volume", cash.get("latest_volume")))
+            cards.append(_metric("Volume change", cash.get("volume_delta"), tone=_delta_tone(cash.get("volume_delta"))))
+            cards.append(_metric("Delivery qty", cash.get("latest_delivery_qty")))
+            cards.append(_metric("Delivery %", cash.get("latest_delivery_percent")))
+            cards.append("</div></section>")
+        else:
+            cards.append('<section class="segment-card"><h4>CASH</h4><div class="empty">Cash data not available.</div></section>')
+        if _has_segment_data(fo):
+            cards.append('<section class="segment-card"><h4>F&O</h4><div class="metric-grid">')
+            cards.append(_metric("Latest session", fo.get("latest_session")))
+            cards.append(_metric("Previous session", fo.get("previous_session")))
+            cards.append(_metric("Rows", fo.get("latest_fo_row_count")))
+            cards.append(_metric("Open interest", fo.get("latest_oi_total")))
+            cards.append(_metric("OI change", fo.get("oi_delta"), tone=_delta_tone(fo.get("oi_delta"))))
+            cards.append(_metric("Change in OI", fo.get("latest_chg_in_oi_total"), tone=_delta_tone(fo.get("latest_chg_in_oi_total"))))
+            cards.append(_metric("Contracts", fo.get("latest_contracts_total")))
+            cards.append(_metric("Contracts change", fo.get("contracts_delta"), tone=_delta_tone(fo.get("contracts_delta"))))
+            cards.append("</div></section>")
+        cards.append("</article>")
+    return "".join(cards)
+
+
 def _observation_html(observations: list[dict[str, Any]]) -> str:
-    text = "\n\n".join(format_observations(obs) for obs in observations)
-    return f"<pre>{escape(text)}</pre>"
+    return _market_cards_html(observations)
 
 
 def _news_html(results: list[NewsResult]) -> str:
     parts: list[str] = []
     for result in results:
-        parts.append(f"<h3>{escape(result.symbol)}</h3>")
+        parts.append(f'<article class="news-group"><h3>{escape(result.symbol)}</h3>')
         if result.error:
-            parts.append(f"<p>ERROR: {escape(result.error)}</p>")
+            parts.append(f'<p class="error">ERROR: {escape(result.error)}</p>')
         if not result.items:
-            parts.append("<p>Not Available</p>")
+            parts.append('<p class="empty">No latest headlines available.</p></article>')
             continue
-        parts.append("<ul>")
+        parts.append('<ul class="news-list">')
         for item in result.items:
             headline = escape(item.headline or "Not Available")
             source = escape(item.source or "")
             url = escape(item.url or "", quote=True)
             published_at = escape(getattr(item, "published_at", "") or "publish date unavailable")
             if url:
-                parts.append(f'<li><time>{published_at}</time> <a href="{url}" target="_blank" rel="noreferrer">{headline}</a> <small>{source}</small></li>')
+                parts.append(f'<li><time>{published_at}</time><a href="{url}" target="_blank" rel="noreferrer">{headline}</a><small>{source}</small></li>')
             else:
-                parts.append(f"<li><time>{published_at}</time> {headline} <small>{source}</small></li>")
-        parts.append("</ul>")
+                parts.append(f"<li><time>{published_at}</time><span>{headline}</span><small>{source}</small></li>")
+        parts.append("</ul></article>")
     return "".join(parts) if parts else "<p>No news loaded.</p>"
 
 
@@ -204,66 +273,19 @@ def _fetch_news_for_symbol(symbol: str, *, limit: int, timeout: float) -> NewsRe
     return replace(result, symbol=symbol)
 
 
-def _parquet_files(root: Path, symbol: str) -> list[Path]:
-    sym_dir = root / f"SYMBOL={symbol}"
-    if not sym_dir.is_dir():
-        return []
-    try:
-        return sorted(sym_dir.glob("YEAR=*.parquet"))
-    except OSError:
-        return []
-
-
-def _data_inventory(symbols: list[str]) -> tuple[str, str]:
-    lines: list[str] = [
-        f"DATA ROOT: {config.data_root()}",
-        f"CASH ROOT: {config.cash_root()}",
-        f"F&O ROOT: {config.fo_root()}",
-        "",
-    ]
-    html_parts: list[str] = [
-        f"<p><strong>Data root:</strong> {escape(str(config.data_root()))}</p>",
-        "<table><thead><tr><th>Symbol</th><th>Segment</th><th>Parquet files available</th></tr></thead><tbody>",
-    ]
-    for sym in symbols:
-        for segment, root in (("cash", config.cash_root()), ("fo", config.fo_root())):
-            files = _parquet_files(root, sym)
-            lines.append(f"{sym} / {segment}:")
-            if files:
-                file_lines = []
-                for fp in files:
-                    try:
-                        stat = fp.stat()
-                        detail = f"{fp.name} ({stat.st_size:,} bytes)"
-                    except OSError:
-                        detail = fp.name
-                    lines.append(f"  - {fp}")
-                    file_lines.append(escape(detail))
-                html_files = "<br>".join(file_lines)
-            else:
-                lines.append("  - Not Available")
-                html_files = "<em>Not Available</em>"
-            html_parts.append(
-                f"<tr><td>{escape(sym)}</td><td>{escape(segment)}</td><td>{html_files}</td></tr>"
-            )
-        lines.append("")
-    html_parts.append("</tbody></table>")
-    return "".join(html_parts), "\n".join(lines).rstrip()
-
-
 def run_pipeline(
     symbols: list[str],
     *,
     lookback: int,
     news_limit: int,
     news_timeout: float,
-) -> tuple[str, str, list[NewsResult]]:
+) -> tuple[str, str, list[NewsResult], list[dict[str, Any]]]:
     observations = [_build_observations_for_symbol(sym, lookback) for sym in symbols]
     news_results = [
         _fetch_news_for_symbol(sym, limit=news_limit, timeout=news_timeout)
         for sym in symbols
     ]
-    return _observation_html(observations), _news_html(news_results), news_results
+    return _observation_html(observations), _news_html(news_results), news_results, observations
 
 
 def _jsonable_news(result: Any) -> dict[str, Any]:
@@ -311,14 +333,15 @@ def load_workspace(payload: dict[str, Any], state: WebState = STATE) -> dict[str
     if news_limit < 1:
         return {"ok": False, "error": "news_limit must be >= 1"}
 
-    obs_html, news_html, news_results = run_pipeline(
+    obs_html, news_html, news_results, observations = run_pipeline(
         symbols,
         lookback=lookback,
         news_limit=news_limit,
         news_timeout=DEFAULT_TIMEOUT_SECONDS,
     )
     workspace_text = _workspace_text_for_symbols(symbols, lookback)
-    data_inventory_html, data_inventory_text = _data_inventory(symbols)
+    data_inventory_html = _market_cards_html(observations)
+    data_inventory_text = workspace_text
     status = f"loaded {len(symbols)} symbol(s) - news: {sum(r.count for r in news_results)}"
 
     state.symbols = symbols
@@ -344,6 +367,44 @@ def load_workspace(payload: dict[str, Any], state: WebState = STATE) -> dict[str
     }
 
 
+def build_prompt_response(payload: dict[str, Any], state: WebState = STATE) -> dict[str, Any]:
+    question = str(payload.get("question") or "").strip()
+    if not question:
+        return {"ok": False, "kind": "error", "error": "Enter a market question."}
+
+    if payload.get("symbols") or payload.get("symbol"):
+        load_result = load_workspace(payload, state)
+        if not load_result.get("ok"):
+            return load_result
+
+    try:
+        payload_obj = build_llm_prompt(
+            user_question=question,
+            workspace_html=state.observation_html,
+            workspace_text=state.workspace_text,
+            news_items=state.news_results,
+            symbols=state.symbols,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "kind": "error",
+            "timestamp": "",
+            "error": f"{type(exc).__name__}: {exc}",
+            "symbols": state.symbols,
+            "prompt_text": state.prompt_text,
+        }
+    state.prompt_text = payload_obj.prompt_text
+    return {
+        "ok": True,
+        "kind": "prompt",
+        "timestamp": payload_obj.timestamp,
+        "symbols": list(payload_obj.symbols),
+        "prompt_text": payload_obj.prompt_text,
+        "news_html": state.news_html,
+    }
+
+
 def ask_question(payload: dict[str, Any], state: WebState = STATE) -> dict[str, Any]:
     question = str(payload.get("question") or "").strip()
     if not question:
@@ -355,6 +416,9 @@ def ask_question(payload: dict[str, Any], state: WebState = STATE) -> dict[str, 
             return load_result
 
     try:
+        prompt_result = build_prompt_response(payload, state)
+        if not prompt_result.get("ok"):
+            return prompt_result
         payload_obj = build_llm_prompt(
             user_question=question,
             workspace_html=state.observation_html,
@@ -392,40 +456,56 @@ INDEX_HTML = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MM.AI</title>
   <style>
-    :root { color-scheme: dark; --bg:#07090d; --panel:#10151d; --line:#263241; --text:#e8edf4; --muted:#98a7b7; --accent:#36d399; --warn:#f6c453; --bad:#ff6b6b; }
+    :root { color-scheme: dark; --bg:#05080c; --panel:#0f141b; --panel2:#141b24; --line:#2a3544; --text:#eef3f8; --muted:#9fb0c2; --accent:#36d399; --warn:#f6c453; --bad:#ff6b6b; --blue:#75a7ff; }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,Segoe UI,Arial,sans-serif; }
-    header { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--line); background:#0b1017; }
+    header { display:flex; align-items:center; justify-content:space-between; padding:12px 18px; border-bottom:1px solid var(--line); background:#090e15; }
     h1 { margin:0; font-size:18px; letter-spacing:0; }
-    main { display:grid; grid-template-columns:minmax(300px, 360px) minmax(420px, 1fr) minmax(420px, 1fr); gap:14px; padding:14px; min-height:calc(100vh - 55px); }
+    main { display:grid; grid-template-columns:320px minmax(520px, 1.1fr) minmax(520px, .9fr); gap:12px; padding:12px; height:calc(100vh - 53px); }
     section, aside { background:var(--panel); border:1px solid var(--line); border-radius:8px; }
     aside { padding:14px; display:flex; flex-direction:column; gap:12px; }
     section { overflow:hidden; }
-    .section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border-bottom:1px solid var(--line); background:#0d131b; }
-    .section-head h2 { margin:0; font-size:14px; }
+    .section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border-bottom:1px solid var(--line); background:#111821; }
+    .section-head h2 { margin:0; font-size:14px; text-transform:uppercase; color:#dfe8f2; }
     label { color:var(--muted); font-size:12px; display:block; margin-bottom:5px; }
     input, textarea, button { width:100%; border:1px solid var(--line); border-radius:6px; background:#080d13; color:var(--text); padding:10px; font:inherit; }
-    textarea { min-height:105px; resize:vertical; }
+    textarea { min-height:155px; resize:vertical; }
     button { background:#123221; border-color:#1d6f45; cursor:pointer; font-weight:650; }
     button:disabled { opacity:.55; cursor:wait; }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
     .status { color:var(--muted); min-height:20px; }
-    .panel-body { padding:14px; overflow:auto; height:calc(100vh - 118px); }
-    .split { display:grid; gap:14px; }
-    .block { border:1px solid var(--line); border-radius:6px; overflow:hidden; background:#080d13; }
-    .block h3 { margin:0; padding:8px 10px; border-bottom:1px solid var(--line); background:#0b1017; font-size:13px; }
-    .block-content { padding:10px; max-height:36vh; overflow:auto; }
+    .panel-body { padding:12px; overflow:auto; height:calc(100vh - 107px); }
+    .split { display:grid; gap:12px; }
+    .block { border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#080d13; }
+    .block h3 { margin:0; padding:9px 11px; border-bottom:1px solid var(--line); background:#0b1017; font-size:13px; color:#d7e1ec; }
+    .block-content { padding:10px; overflow:auto; }
     pre { white-space:pre-wrap; word-break:break-word; margin:0; color:var(--text); }
-    table { width:100%; border-collapse:collapse; font-size:12px; }
-    th, td { border-bottom:1px solid var(--line); padding:7px; text-align:left; vertical-align:top; }
-    th { color:var(--muted); background:#0b1017; position:sticky; top:0; }
-    time { display:inline-block; min-width:155px; color:var(--warn); font-size:12px; }
-    li { margin:7px 0; }
-    iframe { width:100%; height:100%; border:0; background:white; border-radius:6px; }
-    .answer { padding:12px; border:1px solid var(--line); border-radius:6px; background:#080d13; white-space:pre-wrap; min-height:120px; }
-    .prompt { padding:12px; border:1px solid var(--line); border-radius:6px; background:#080d13; white-space:pre-wrap; min-height:260px; overflow:auto; font-family:ui-monospace,Consolas,monospace; font-size:12px; }
+    .symbol-card { border:1px solid var(--line); border-radius:8px; background:#0b1118; margin-bottom:12px; overflow:hidden; }
+    .symbol-card > header { padding:10px 12px; background:#121a24; border-bottom:1px solid var(--line); }
+    .symbol-card h3 { margin:0; font-size:16px; color:#fff; }
+    .segment-card { padding:12px; border-bottom:1px solid var(--line); }
+    .segment-card:last-child { border-bottom:0; }
+    .segment-card h4 { margin:0 0 9px; color:var(--blue); font-size:12px; letter-spacing:.08em; }
+    .metric-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+    .metric { min-height:62px; border:1px solid #223044; border-radius:7px; background:var(--panel2); padding:8px; }
+    .metric span { display:block; color:var(--muted); font-size:11px; margin-bottom:5px; }
+    .metric strong { display:block; font-size:17px; color:#f8fbff; overflow-wrap:anywhere; }
+    .metric-up strong { color:var(--accent); }
+    .metric-down strong { color:var(--bad); }
+    .empty { color:var(--muted); padding:8px 0; }
+    .error { color:var(--bad); }
+    .news-group { border-bottom:1px solid var(--line); padding:10px 0; }
+    .news-group:first-child { padding-top:0; }
+    .news-group h3 { margin:0 0 8px; color:#fff; }
+    .news-list { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+    .news-list li { display:grid; grid-template-columns:156px 1fr; gap:8px 10px; padding:8px; border:1px solid #223044; border-radius:7px; background:#101720; }
+    .news-list time { color:var(--warn); font-size:12px; }
+    .news-list a { color:#9eb4ff; }
+    .news-list small { grid-column:2; color:var(--muted); }
+    .answer { padding:12px; border:1px solid var(--line); border-radius:7px; background:#080d13; white-space:pre-wrap; min-height:205px; max-height:30vh; overflow:auto; }
+    .prompt { padding:12px; border:1px solid var(--line); border-radius:7px; background:#080d13; white-space:pre-wrap; min-height:280px; max-height:38vh; overflow:auto; font-family:ui-monospace,Consolas,monospace; font-size:12px; color:#dce7f3; }
     .health { font-family:ui-monospace,Consolas,monospace; font-size:12px; color:var(--muted); white-space:pre-wrap; }
-    @media (max-width: 1200px) { main { grid-template-columns:1fr; } .panel-body { height:auto; max-height:70vh; } }
+    @media (max-width: 1280px) { main { grid-template-columns:1fr; height:auto; } .panel-body { height:auto; max-height:72vh; } }
   </style>
 </head>
 <body>
@@ -444,18 +524,17 @@ INDEX_HTML = """<!doctype html>
       <div id="health" class="health"></div>
     </aside>
     <section>
-      <div class="section-head"><h2>Data Available To Script</h2><span id="symbolStatus" class="status"></span></div>
+      <div class="section-head"><h2>Market Data Cards</h2><span id="symbolStatus" class="status"></span></div>
       <div class="panel-body split">
-        <div class="block"><h3>Parquet Files</h3><div id="inventory" class="block-content"><pre>No data loaded.</pre></div></div>
-        <div class="block"><h3>Observable Market Data</h3><div id="obs" class="block-content"><pre>No workspace loaded.</pre></div></div>
+        <div id="inventory"><div class="empty">No market data loaded.</div></div>
       </div>
     </section>
     <section>
-      <div class="section-head"><h2>LLM Prompt And Output</h2><span id="llmStatus" class="status"></span></div>
+      <div class="section-head"><h2>AI Workbench</h2><span id="llmStatus" class="status"></span></div>
       <div class="panel-body split">
-        <div class="block"><h3>News Ticker - Latest Published First</h3><div id="news" class="block-content"><pre>No news loaded.</pre></div></div>
-        <div class="block"><h3>Prompt Sent To LLM</h3><pre id="prompt" class="prompt">No prompt sent yet.</pre></div>
         <div class="block"><h3>LLM Output</h3><div id="answer" class="answer"></div></div>
+        <div class="block"><h3>Prompt Sent To LLM</h3><pre id="prompt" class="prompt">Ask a question to build and display the exact prompt.</pre></div>
+        <div class="block"><h3>News Ticker - Latest Published First</h3><div id="news" class="block-content"><div class="empty">No news loaded.</div></div></div>
       </div>
     </section>
   </main>
@@ -472,11 +551,11 @@ INDEX_HTML = """<!doctype html>
     }
     function busy(on) { $("loadBtn").disabled = on; $("askBtn").disabled = on; }
     function showWorkspace(data) {
-      $("inventory").innerHTML = data.data_inventory_html || "<pre>No data inventory.</pre>";
-      $("obs").innerHTML = data.observation_html || "<pre>No observations.</pre>";
+      $("inventory").innerHTML = data.data_inventory_html || '<div class="empty">No market data loaded.</div>';
       $("news").innerHTML = data.news_html || "<pre>No news.</pre>";
       state.workspaceText = data.workspace_text || "";
       $("symbolStatus").textContent = (data.symbols || []).join(", ");
+      $("prompt").textContent = "Ask a question to build and display the exact prompt.";
     }
     async function loadWorkspace({ silent = false } = {}) {
       busy(true); if (!silent) $("status").textContent = "Loading workspace...";
@@ -493,9 +572,16 @@ INDEX_HTML = """<!doctype html>
     $("askBtn").onclick = async () => {
       busy(true); $("status").textContent = "Generating...";
       try {
-        const data = await post("/api/ask", { ...payload(), question: $("question").value });
+        const request = { ...payload(), question: $("question").value };
+        const prepared = await post("/api/prompt", request);
+        if (!prepared.ok) throw new Error(prepared.error || "prompt failed");
+        $("prompt").textContent = prepared.prompt_text || "No prompt returned.";
+        if (prepared.news_html) $("news").innerHTML = prepared.news_html;
+        $("status").textContent = "Prompt ready. Waiting for LLM...";
+        const data = await post("/api/ask", { question: $("question").value });
         $("answer").textContent = data.response_text || data.error || "";
         $("prompt").textContent = data.prompt_text || "No prompt returned.";
+        if (data.news_html) $("news").innerHTML = data.news_html;
         $("status").textContent = `${data.kind || "response"} ${data.timestamp || ""}`;
         $("llmStatus").textContent = data.timestamp || "";
       } catch (e) { $("status").textContent = e.message; }
@@ -560,6 +646,9 @@ class MMAIHandler(BaseHTTPRequestHandler):
             payload = self._read_json()
             if path == "/api/load":
                 self._send_json(load_workspace(payload))
+                return
+            if path == "/api/prompt":
+                self._send_json(build_prompt_response(payload))
                 return
             if path == "/api/ask":
                 self._send_json(ask_question(payload))

@@ -39,6 +39,7 @@ def test_load_workspace_updates_state(monkeypatch):
                     count=0,
                 )
             ],
+            [{"symbol": "RELIANCE", "cash": {"latest_session": "2026-06-12"}, "fo": {}}],
         )
 
     monkeypatch.setattr(web_app, "run_pipeline", fake_pipeline)
@@ -61,7 +62,7 @@ def test_ask_question_autoloads_when_symbols_supplied(monkeypatch):
     monkeypatch.setattr(
         web_app,
         "run_pipeline",
-        lambda *_a, **_kw: ("<p>obs</p>", "<p>news</p>", []),
+        lambda *_a, **_kw: ("<p>obs</p>", "<p>news</p>", [], []),
     )
     monkeypatch.setattr(web_app, "_workspace_text_for_symbols", lambda s, l: "SYMBOL: RELIANCE")
 
@@ -75,6 +76,8 @@ def test_ask_question_autoloads_when_symbols_supplied(monkeypatch):
         assert kwargs["user_question"] == "Say OK"
         assert kwargs["symbols"] == ["RELIANCE"]
         class FakePrompt:
+            timestamp = "13:06:26 10:00:00"
+            symbols = ("RELIANCE",)
             prompt_text = "PROMPT SENT"
 
         return FakePrompt()
