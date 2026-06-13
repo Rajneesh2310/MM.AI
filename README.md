@@ -51,6 +51,10 @@ For VPS deployments running MMWeb, set the same value MMWeb uses:
 export MM_DATA_ROOT=/opt/mm-web-data
 ```
 
+Do not set `MM_INSTALL_ROOT=/opt/mm-web-data` on VPS. `MM_INSTALL_ROOT` is an
+install folder, so MM.AI would look under `/opt/mm-web-data/data`, which is not
+the MMWeb data folder.
+
 ## Quick start
 
 ```powershell
