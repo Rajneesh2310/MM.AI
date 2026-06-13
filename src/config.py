@@ -1,7 +1,7 @@
 """MM install / data root resolution for MM.AI.
 
-Read-only. Resolves the directory that owns ``data/cash`` and ``data/fo`` so the
-symbol reader can locate parquet shards without depending on the MM backend.
+Read-only. Resolves the directory that owns ``cash`` and ``fo`` so the symbol
+reader can locate parquet shards without depending on the MM backend.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import os
 import sys
 from pathlib import Path
 
+DATA_ENV_VAR = "MM_DATA_ROOT"
 ENV_VAR = "MM_INSTALL_ROOT"
 _DEV_DEFAULT = Path.home() / "MMMarket"
 _FROZEN_CONFIG_NAME = "mm_install.json"
@@ -39,7 +40,8 @@ def install_root() -> Path:
     """Resolve the MM installation root.
 
     Order: ``MM_INSTALL_ROOT`` env var, ``mm_install.json`` beside frozen exe,
-    then ``~/MMMarket``.
+    then ``~/MMMarket``. For VPS/web deployments prefer :func:`data_root`
+    with ``MM_DATA_ROOT`` because the web app uses a direct data-folder path.
     """
     env = os.environ.get(ENV_VAR, "").strip()
     if env:
@@ -51,6 +53,9 @@ def install_root() -> Path:
 
 
 def data_root() -> Path:
+    env = os.environ.get(DATA_ENV_VAR, "").strip()
+    if env:
+        return Path(env).expanduser().resolve()
     return install_root() / "data"
 
 
