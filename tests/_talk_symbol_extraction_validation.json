@@ -1,0 +1,321 @@
+﻿{
+  "install_root": "C:\\Users\\DELL\\AppData\\Local\\Temp\\mm_ai_talk_extract_validation",
+  "extractor_validation": [
+    {
+      "question": "compare nifty and reliance",
+      "extracted_with_full_universe": [
+        "NIFTY",
+        "RELIANCE"
+      ],
+      "extracted_safe_fallback": [
+        "NIFTY",
+        "RELIANCE"
+      ]
+    },
+    {
+      "question": "What changed in RELIANCE today?",
+      "extracted_with_full_universe": [
+        "RELIANCE"
+      ],
+      "extracted_safe_fallback": [
+        "RELIANCE"
+      ]
+    },
+    {
+      "question": "Show INFY activity",
+      "extracted_with_full_universe": [
+        "INFY"
+      ],
+      "extracted_safe_fallback": [
+        "INFY"
+      ]
+    },
+    {
+      "question": "Why is NIFTY in news?",
+      "extracted_with_full_universe": [
+        "NIFTY"
+      ],
+      "extracted_safe_fallback": [
+        "NIFTY"
+      ]
+    },
+    {
+      "question": "compare reliance, infy and nifty",
+      "extracted_with_full_universe": [
+        "RELIANCE",
+        "INFY",
+        "NIFTY"
+      ],
+      "extracted_safe_fallback": [
+        "RELIANCE",
+        "INFY",
+        "NIFTY"
+      ]
+    },
+    {
+      "question": "compare reliance; infy; nifty",
+      "extracted_with_full_universe": [
+        "RELIANCE",
+        "INFY",
+        "NIFTY"
+      ],
+      "extracted_safe_fallback": [
+        "RELIANCE",
+        "INFY",
+        "NIFTY"
+      ]
+    },
+    {
+      "question": "what changed today?",
+      "extracted_with_full_universe": [],
+      "extracted_safe_fallback": []
+    },
+    {
+      "question": "   ",
+      "extracted_with_full_universe": [],
+      "extracted_safe_fallback": []
+    }
+  ],
+  "ui_validation": [
+    {
+      "question": "compare nifty and reliance",
+      "loaded_symbols": [
+        "NIFTY",
+        "RELIANCE"
+      ],
+      "symbol_field_text": "NIFTY, RELIANCE",
+      "ok_hits": [
+        [
+          "OK: deterministic test reply.",
+          "25:05:26 14:58:48"
+        ]
+      ],
+      "err_hits": [],
+      "status_transitions": [
+        "EXTRACTING SYMBOLS...",
+        "LOADING NIFTY, RELIANCE...",
+        "WORKSPACE READY",
+        "GENERATING MARKET RESPONSE...",
+        "MARKET RESPONSE READY"
+      ],
+      "observation_has_text": true,
+      "news_html_chars": 2855,
+      "no_workspace_fallback_in_response": false,
+      "empty_question_fallback_in_response": false
+    },
+    {
+      "question": "What changed in RELIANCE today?",
+      "loaded_symbols": [
+        "RELIANCE"
+      ],
+      "symbol_field_text": "RELIANCE",
+      "ok_hits": [
+        [
+          "OK: deterministic test reply.",
+          "25:05:26 14:58:48"
+        ]
+      ],
+      "err_hits": [],
+      "status_transitions": [
+        "EXTRACTING SYMBOLS...",
+        "LOADING RELIANCE...",
+        "WORKSPACE READY",
+        "GENERATING MARKET RESPONSE...",
+        "MARKET RESPONSE READY"
+      ],
+      "observation_has_text": true,
+      "news_html_chars": 1665,
+      "no_workspace_fallback_in_response": false,
+      "empty_question_fallback_in_response": false
+    },
+    {
+      "question": "Show INFY activity",
+      "loaded_symbols": [
+        "INFY"
+      ],
+      "symbol_field_text": "INFY",
+      "ok_hits": [
+        [
+          "OK: deterministic test reply.",
+          "25:05:26 14:58:48"
+        ]
+      ],
+      "err_hits": [],
+      "status_transitions": [
+        "EXTRACTING SYMBOLS...",
+        "LOADING INFY...",
+        "WORKSPACE READY",
+        "GENERATING MARKET RESPONSE...",
+        "MARKET RESPONSE READY"
+      ],
+      "observation_has_text": true,
+      "news_html_chars": 1653,
+      "no_workspace_fallback_in_response": false,
+      "empty_question_fallback_in_response": false
+    },
+    {
+      "question": "Why is NIFTY in news?",
+      "loaded_symbols": [
+        "NIFTY"
+      ],
+      "symbol_field_text": "NIFTY",
+      "ok_hits": [
+        [
+          "OK: deterministic test reply.",
+          "25:05:26 14:58:48"
+        ]
+      ],
+      "err_hits": [],
+      "status_transitions": [
+        "EXTRACTING SYMBOLS...",
+        "LOADING NIFTY...",
+        "WORKSPACE READY",
+        "GENERATING MARKET RESPONSE...",
+        "MARKET RESPONSE READY"
+      ],
+      "observation_has_text": true,
+      "news_html_chars": 1656,
+      "no_workspace_fallback_in_response": false,
+      "empty_question_fallback_in_response": false
+    },
+    {
+      "question": "compare reliance, infy and nifty",
+      "loaded_symbols": [
+        "RELIANCE",
+        "INFY",
+        "NIFTY"
+      ],
+      "symbol_field_text": "RELIANCE, INFY, NIFTY",
+      "ok_hits": [
+        [
+          "OK: deterministic test reply.",
+          "25:05:26 14:58:48"
+        ]
+      ],
+      "err_hits": [],
+      "status_transitions": [
+        "EXTRACTING SYMBOLS...",
+        "LOADING RELIANCE, INFY, NIFTY...",
+        "WORKSPACE READY",
+        "GENERATING MARKET RESPONSE...",
+        "MARKET RESPONSE READY"
+      ],
+      "observation_has_text": true,
+      "news_html_chars": 4042,
+      "no_workspace_fallback_in_response": false,
+      "empty_question_fallback_in_response": false
+    },
+    {
+      "question": "compare reliance; infy; nifty",
+      "loaded_symbols": [
+        "RELIANCE",
+        "INFY",
+        "NIFTY"
+      ],
+      "symbol_field_text": "RELIANCE, INFY, NIFTY",
+      "ok_hits": [
+        [
+          "OK: deterministic test reply.",
+          "25:05:26 14:58:49"
+        ]
+      ],
+      "err_hits": [],
+      "status_transitions": [
+        "EXTRACTING SYMBOLS...",
+        "LOADING RELIANCE, INFY, NIFTY...",
+        "WORKSPACE READY",
+        "GENERATING MARKET RESPONSE...",
+        "MARKET RESPONSE READY"
+      ],
+      "observation_has_text": true,
+      "news_html_chars": 4042,
+      "no_workspace_fallback_in_response": false,
+      "empty_question_fallback_in_response": false
+    },
+    {
+      "question": "what changed today?",
+      "loaded_symbols": [],
+      "symbol_field_text": "",
+      "ok_hits": [
+        [
+          "No workspace loaded. Enter a symbol or ask about a symbol directly.",
+          "25:05:26 14:58:49"
+        ]
+      ],
+      "err_hits": [],
+      "status_transitions": [
+        "EXTRACTING SYMBOLS...",
+        "READY"
+      ],
+      "observation_has_text": false,
+      "news_html_chars": 621,
+      "no_workspace_fallback_in_response": true,
+      "empty_question_fallback_in_response": false
+    },
+    {
+      "question": "   ",
+      "loaded_symbols": [],
+      "symbol_field_text": "",
+      "ok_hits": [],
+      "err_hits": [
+        [
+          "Enter a market question.",
+          "25:05:26 14:58:49"
+        ]
+      ],
+      "status_transitions": [
+        "MARKET RESPONSE ERROR"
+      ],
+      "observation_has_text": false,
+      "news_html_chars": 621,
+      "no_workspace_fallback_in_response": false,
+      "empty_question_fallback_in_response": true
+    }
+  ],
+  "llm_transport_called_times": 6,
+  "safe_prompt_audit": [
+    {
+      "all_sections_present": true,
+      "has_html_leak": false,
+      "prompt_chars": 4129
+    },
+    {
+      "all_sections_present": true,
+      "has_html_leak": false,
+      "prompt_chars": 3162
+    },
+    {
+      "all_sections_present": true,
+      "has_html_leak": false,
+      "prompt_chars": 3133
+    },
+    {
+      "all_sections_present": true,
+      "has_html_leak": false,
+      "prompt_chars": 3142
+    },
+    {
+      "all_sections_present": true,
+      "has_html_leak": false,
+      "prompt_chars": 5101
+    },
+    {
+      "all_sections_present": true,
+      "has_html_leak": false,
+      "prompt_chars": 5098
+    }
+  ],
+  "status_state_tokens_seen": [
+    "EXTRACTING SYMBOLS...",
+    "GENERATING MARKET RESPONSE...",
+    "LOADING INFY...",
+    "LOADING NIFTY, RELIANCE...",
+    "LOADING NIFTY...",
+    "LOADING RELIANCE, INFY, NIFTY...",
+    "LOADING RELIANCE...",
+    "MARKET RESPONSE ERROR",
+    "MARKET RESPONSE READY",
+    "READY",
+    "WORKSPACE READY"
+  ]
+}

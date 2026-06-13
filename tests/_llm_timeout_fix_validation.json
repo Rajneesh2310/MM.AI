@@ -1,0 +1,142 @@
+{
+  "constants": {
+    "default_timeout_seconds": 120.0,
+    "min_timeout_seconds": 1.0,
+    "max_timeout_seconds": 600.0
+  },
+  "default_config": {
+    "backend_type": "ollama",
+    "model_name": "qwen2.5:7b",
+    "endpoint_url": "http://localhost:11434/api/generate",
+    "timeout_seconds": 120.0
+  },
+  "env_override_matrix": [
+    {
+      "env_value": null,
+      "timeout_seconds": 120.0,
+      "model_name": "qwen2.5:7b",
+      "endpoint_url": "http://localhost:11434/api/generate",
+      "expected_timeout_seconds": 120.0,
+      "matches_expected": true
+    },
+    {
+      "env_value": "120",
+      "timeout_seconds": 120.0,
+      "model_name": "qwen2.5:7b",
+      "endpoint_url": "http://localhost:11434/api/generate",
+      "expected_timeout_seconds": 120.0,
+      "matches_expected": true
+    },
+    {
+      "env_value": "180",
+      "timeout_seconds": 180.0,
+      "model_name": "qwen2.5:7b",
+      "endpoint_url": "http://localhost:11434/api/generate",
+      "expected_timeout_seconds": 180.0,
+      "matches_expected": true
+    },
+    {
+      "env_value": "60",
+      "timeout_seconds": 60.0,
+      "model_name": "qwen2.5:7b",
+      "endpoint_url": "http://localhost:11434/api/generate",
+      "expected_timeout_seconds": 60.0,
+      "matches_expected": true
+    },
+    {
+      "env_value": "abc",
+      "timeout_seconds": 120.0,
+      "model_name": "qwen2.5:7b",
+      "endpoint_url": "http://localhost:11434/api/generate",
+      "expected_timeout_seconds": 120.0,
+      "matches_expected": true
+    },
+    {
+      "env_value": "",
+      "timeout_seconds": 120.0,
+      "model_name": "qwen2.5:7b",
+      "endpoint_url": "http://localhost:11434/api/generate",
+      "expected_timeout_seconds": 120.0,
+      "matches_expected": true
+    },
+    {
+      "env_value": "not-a-number",
+      "timeout_seconds": 120.0,
+      "model_name": "qwen2.5:7b",
+      "endpoint_url": "http://localhost:11434/api/generate",
+      "expected_timeout_seconds": 120.0,
+      "matches_expected": true
+    },
+    {
+      "env_value": "100000",
+      "timeout_seconds": 600.0,
+      "model_name": "qwen2.5:7b",
+      "endpoint_url": "http://localhost:11434/api/generate",
+      "expected_timeout_seconds": 600.0,
+      "matches_expected": true
+    },
+    {
+      "env_value": "0.0001",
+      "timeout_seconds": 1.0,
+      "model_name": "qwen2.5:7b",
+      "endpoint_url": "http://localhost:11434/api/generate",
+      "expected_timeout_seconds": 1.0,
+      "matches_expected": true
+    },
+    {
+      "env_value": "-30",
+      "timeout_seconds": 1.0,
+      "model_name": "qwen2.5:7b",
+      "endpoint_url": "http://localhost:11434/api/generate",
+      "expected_timeout_seconds": 1.0,
+      "matches_expected": true
+    }
+  ],
+  "adapter_token_matrix": [
+    {
+      "config_timeout_seconds": 120.0,
+      "adapter_token": "timeout: 120",
+      "friendly_text": "Local model request timed out after 120 seconds.",
+      "ok": false
+    },
+    {
+      "config_timeout_seconds": 180.0,
+      "adapter_token": "timeout: 180",
+      "friendly_text": "Local model request timed out after 180 seconds.",
+      "ok": false
+    },
+    {
+      "config_timeout_seconds": 5.0,
+      "adapter_token": "timeout: 5",
+      "friendly_text": "Local model request timed out after 5 seconds.",
+      "ok": false
+    },
+    {
+      "config_timeout_seconds": 89.6,
+      "adapter_token": "timeout: 90",
+      "friendly_text": "Local model request timed out after 90 seconds.",
+      "ok": false
+    }
+  ],
+  "endpoint_probe": {
+    "alive": true,
+    "latency_ms": 1012,
+    "error": null
+  },
+  "live_smoke": {
+    "endpoint_used": "http://localhost:11434/api/generate",
+    "model": "qwen2.5:7b",
+    "timeout_seconds": 120.0,
+    "ok": true,
+    "elapsed_ms": 85041,
+    "prompt_chars": 2158,
+    "adapter_token": null,
+    "friendly_text": null,
+    "response_text_chars": 52
+  },
+  "questions_under_test": [
+    "What changed in RELIANCE today?",
+    "Compare RELIANCE and NIFTY.",
+    "What changed in SBICARD today?"
+  ]
+}

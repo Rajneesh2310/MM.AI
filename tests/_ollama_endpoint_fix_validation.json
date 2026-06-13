@@ -1,0 +1,137 @@
+{
+  "config": {
+    "backend_type": "ollama",
+    "model_name": "qwen2.5:7b",
+    "endpoint_url": "http://localhost:11434/api/generate",
+    "endpoint_after_normalise": "http://localhost:11434/api/generate",
+    "timeout_seconds": 60.0
+  },
+  "defaults": {
+    "ollama_default_model": "qwen2.5:7b",
+    "ollama_default_endpoint": "http://localhost:11434/api/generate"
+  },
+  "local_endpoint_guard": {
+    "ok": true,
+    "reason": ""
+  },
+  "endpoint_probe": {
+    "endpoint": "http://localhost:11434/api/generate",
+    "alive": true,
+    "info": {
+      "alive": true,
+      "latency_ms": 1024,
+      "error": null
+    }
+  },
+  "endpoint_normalisation": [
+    {
+      "input": "http://localhost:11434/api/generate",
+      "normalised": "http://localhost:11434/api/generate"
+    },
+    {
+      "input": "http://localhost:11434",
+      "normalised": "http://localhost:11434/api/generate"
+    },
+    {
+      "input": "http://localhost:11434/",
+      "normalised": "http://localhost:11434/api/generate"
+    },
+    {
+      "input": "http://localhost:11434/v1/chat/completions",
+      "normalised": "http://localhost:11434/api/generate"
+    },
+    {
+      "input": "http://localhost:11434/api/chat",
+      "normalised": "http://localhost:11434/api/generate"
+    },
+    {
+      "input": "http://127.0.0.1:11434/foo",
+      "normalised": "http://127.0.0.1:11434/api/generate"
+    },
+    {
+      "input": "https://127.0.0.1:11434/",
+      "normalised": "https://127.0.0.1:11434/api/generate"
+    },
+    {
+      "input": "http://localhost:11434/api/generate?stream=true#hash",
+      "normalised": "http://localhost:11434/api/generate"
+    }
+  ],
+  "live_smoke": {
+    "endpoint_used": "http://localhost:11434/api/generate",
+    "model": "qwen2.5:7b",
+    "timeout_seconds": 120.0,
+    "ok": true,
+    "elapsed_ms": 45246,
+    "prompt_chars": 2158,
+    "adapter_token": null,
+    "friendly_text": null,
+    "response_was_non_empty": true,
+    "response_text_chars": 52
+  },
+  "mocked_runs": [
+    {
+      "question": "What changed in RELIANCE today?",
+      "kind": "ok",
+      "timestamp": "25:05:26 16:56:56",
+      "response_was_non_empty": true
+    },
+    {
+      "question": "Compare RELIANCE and INFY.",
+      "kind": "ok",
+      "timestamp": "25:05:26 16:56:56",
+      "response_was_non_empty": true
+    },
+    {
+      "question": "Why is NIFTY in news?",
+      "kind": "ok",
+      "timestamp": "25:05:26 16:56:56",
+      "response_was_non_empty": true
+    },
+    {
+      "question": "What changed in SBICARD today?",
+      "kind": "ok",
+      "timestamp": "25:05:26 16:56:56",
+      "response_was_non_empty": true
+    }
+  ],
+  "error_mode_matrix": [
+    {
+      "case": "timeout",
+      "adapter_token": "timeout",
+      "friendly_text": "Local model request timed out."
+    },
+    {
+      "case": "connection_refused",
+      "adapter_token": "connection_failure: Connection refused",
+      "friendly_text": "Unable to connect to local Ollama runtime."
+    },
+    {
+      "case": "http_404_model_missing",
+      "adapter_token": "http_error: 404 Not Found — model \"missing-model\" not found, try pulling it first",
+      "friendly_text": "Ollama endpoint returned 404."
+    },
+    {
+      "case": "http_500",
+      "adapter_token": "http_error: 500 Internal Server Error",
+      "friendly_text": "Local Ollama runtime reported a server error."
+    },
+    {
+      "case": "endpoint_rejected",
+      "adapter_token": "endpoint_rejected: non_local_endpoint: 8.8.8.8",
+      "friendly_text": "Local LLM endpoint rejected: configure MM_AI_LLM_ENDPOINT to a loopback or private address."
+    }
+  ],
+  "symbols_under_test": [
+    "RELIANCE",
+    "INFY",
+    "SBICARD",
+    "NIFTY"
+  ],
+  "questions_under_test": [
+    "What changed in RELIANCE today?",
+    "Compare RELIANCE and INFY.",
+    "Why is NIFTY in news?",
+    "What changed in SBICARD today?"
+  ]
+}
